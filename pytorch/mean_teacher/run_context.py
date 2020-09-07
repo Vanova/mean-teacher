@@ -22,7 +22,7 @@ class TrainLog:
     INCREMENTAL_UPDATE_TIME = 300
 
     def __init__(self, directory, name):
-        self.log_file_path = "{}/{}.msgpack".format(directory, name)
+        self.log_file_path = "{}/{}.csv".format(directory, name)
         self._log = defaultdict(dict)
         self._log_lock = threading.RLock()
         self._last_update_time = time.time() - self.INCREMENTAL_UPDATE_TIME
@@ -35,7 +35,7 @@ class TrainLog:
 
     def save(self):
         df = self._as_dataframe()
-        df.to_msgpack(self.log_file_path, compress='zlib')
+        df.to_csv(self.log_file_path)
 
     def _record(self, step, col_val_dict):
         with self._log_lock:

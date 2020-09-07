@@ -58,7 +58,7 @@ def main(context):
         model_factory = architectures.__dict__[args.arch]
         model_params = dict(pretrained=args.pretrained, num_classes=num_classes)
         model = model_factory(**model_params)
-        model = nn.DataParallel(model).cuda()
+        # model = nn.DataParallel(model).cuda() # TODO fix
 
         if ema:
             for param in model.parameters():
@@ -128,21 +128,21 @@ def main(context):
             }, is_best, checkpoint_path, epoch + 1)
 
 
-def parse_dict_args(**kwargs):
-    global args
-
-    def to_cmdline_kwarg(key, value):
-        if len(key) == 1:
-            key = "-{}".format(key)
-        else:
-            key = "--{}".format(re.sub(r"_", "-", key))
-        value = str(value)
-        return key, value
-
-    kwargs_pairs = (to_cmdline_kwarg(key, value)
-                    for key, value in kwargs.items())
-    cmdline_args = list(sum(kwargs_pairs, ()))
-    args = parser.parse_args(cmdline_args)
+# def parse_dict_args(**kwargs):
+#     global args
+#
+#     def to_cmdline_kwarg(key, value):
+#         if len(key) == 1:
+#             key = "-{}".format(key)
+#         else:
+#             key = "--{}".format(re.sub(r"_", "-", key))
+#         value = str(value)
+#         return key, value
+#
+#     kwargs_pairs = (to_cmdline_kwarg(key, value)
+#                     for key, value in kwargs.items())
+#     cmdline_args = list(sum(kwargs_pairs, ()))
+#     args = parser.parse_args(cmdline_args)
 
 
 def create_data_loaders(train_transformation,
@@ -219,9 +219,13 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
         adjust_learning_rate(optimizer, epoch, i, len(train_loader))
         meters.update('lr', optimizer.param_groups[0]['lr'])
 
-        input_var = torch.autograd.Variable(input)
-        ema_input_var = torch.autograd.Variable(ema_input, volatile=True)
-        target_var = torch.autograd.Variable(target.cuda(async=True))
+        # TODO deprecated
+        # input_var = torch.autograd.Variable(input)
+        # ema_input_var = torch.autograd.Variable(ema_input, volatile=True)
+        # target_var = torch.autograd.Variable(target.cuda(async=True))
+        input_var = input
+        ema_input_var = ema_input
+        target_var = target
 
         minibatch_size = len(target_var)
         labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
@@ -241,34 +245,35 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
             logit1, logit2 = model_out
             ema_logit, _ = ema_model_out
 
-        ema_logit = Variable(ema_logit.detach().data, requires_grad=False)
+        # ema_logit = Variable(ema_logit.detach().data, requires_grad=False)
+        ema_logit = ema_logit.detach().data # TODO uncomment?
 
         if args.logit_distance_cost >= 0:
             class_logit, cons_logit = logit1, logit2
             res_loss = args.logit_distance_cost * residual_logit_criterion(class_logit, cons_logit) / minibatch_size
-            meters.update('res_loss', res_loss.data[0])
+            meters.update('res_loss', res_loss.data)
         else:
             class_logit, cons_logit = logit1, logit1
             res_loss = 0
 
         class_loss = class_criterion(class_logit, target_var) / minibatch_size
-        meters.update('class_loss', class_loss.data[0])
+        meters.update('class_loss', class_loss.data)
 
         ema_class_loss = class_criterion(ema_logit, target_var) / minibatch_size
-        meters.update('ema_class_loss', ema_class_loss.data[0])
+        meters.update('ema_class_loss', ema_class_loss.data)
 
         if args.consistency:
             consistency_weight = get_current_consistency_weight(epoch)
             meters.update('cons_weight', consistency_weight)
             consistency_loss = consistency_weight * consistency_criterion(cons_logit, ema_logit) / minibatch_size
-            meters.update('cons_loss', consistency_loss.data[0])
+            meters.update('cons_loss', consistency_loss.data)
         else:
             consistency_loss = 0
             meters.update('cons_loss', 0)
 
         loss = class_loss + consistency_loss + res_loss
-        assert not (np.isnan(loss.data[0]) or loss.data[0] > 1e5), 'Loss explosion: {}'.format(loss.data[0])
-        meters.update('loss', loss.data[0])
+        assert not (np.isnan(loss.data) or loss.data > 1e5), 'Loss explosion: {}'.format(loss.data)
+        meters.update('loss', loss.data)
 
         prec1, prec5 = accuracy(class_logit.data, target_var.data, topk=(1, 5))
         meters.update('top1', prec1[0], labeled_minibatch_size)
@@ -303,12 +308,13 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
                 'Prec@1 {meters[top1]:.3f}\t'
                 'Prec@5 {meters[top5]:.3f}'.format(
                     epoch, i, len(train_loader), meters=meters))
-            log.record(epoch + i / len(train_loader), {
+            d = {
                 'step': global_step,
                 **meters.values(),
                 **meters.averages(),
                 **meters.sums()
-            })
+            }
+            log.record(epoch + i / len(train_loader), d)
 
 
 def validate(eval_loader, model, log, global_step, epoch):
@@ -337,7 +343,7 @@ def validate(eval_loader, model, log, global_step, epoch):
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output1.data, target_var.data, topk=(1, 5))
-        meters.update('class_loss', class_loss.data[0], labeled_minibatch_size)
+        meters.update('class_loss', class_loss.data, labeled_minibatch_size)
         meters.update('top1', prec1[0], labeled_minibatch_size)
         meters.update('error1', 100.0 - prec1[0], labeled_minibatch_size)
         meters.update('top5', prec5[0], labeled_minibatch_size)
