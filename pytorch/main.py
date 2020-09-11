@@ -323,13 +323,14 @@ def validate(eval_loader, model, log, global_step, epoch):
 
     # switch to evaluate mode
     model.eval()
-
     end = time.time()
     for i, (input, target) in enumerate(eval_loader):
         meters.update('data_time', time.time() - end)
 
-        input_var = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target.cuda(async=True), volatile=True)
+        # input_var = torch.autograd.Variable(input, volatile=True) # no grad
+        # target_var = torch.autograd.Variable(target.cuda(async=True), volatile=True) # no grad
+        input_var = input
+        target_var = target
 
         minibatch_size = len(target_var)
         labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
