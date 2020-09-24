@@ -41,7 +41,7 @@ def imagenet():
 @export
 def cifar10():
     channel_stats = dict(mean=[0.4914, 0.4822, 0.4465],
-                         std=[0.2470,  0.2435,  0.2616])
+                         std=[0.2470, 0.2435, 0.2616])
     train_transformation = data.TransformTwice(transforms.Compose([
         data.RandomTranslateWithReflect(4),
         transforms.RandomHorizontalFlip(),
@@ -59,3 +59,63 @@ def cifar10():
         'datadir': 'data-local/images/cifar/cifar10/by-image',
         'num_classes': 10
     }
+
+
+@export
+def asvspoof2019la():
+    # channel_stats = dict(mean=[0.4914, 0.4822, 0.4465],
+    #                      std=[0.2470,  0.2435,  0.2616])
+    # train_transformation = data.TransformTwice(transforms.Compose([
+    #     data.RandomTranslateWithReflect(4),
+    #     transforms.RandomHorizontalFlip(),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(**channel_stats)
+    # ]))
+    # eval_transformation = transforms.Compose([
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(**channel_stats)
+    # ])
+
+    return {
+        'train_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_train.tsv',
+        'val_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_validation.tsv',
+        'eval_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_evaluation.tsv',
+        'feat_storage': '',
+        'scoring_path': 'la_scores/',
+        'num_classes': 2
+    }
+
+
+@export
+def asvspoof2019pa():
+    # train_transformation = data.TransformTwice(transforms.Compose([
+    #     data.RandomTranslateWithReflect(4),
+    #     transforms.RandomHorizontalFlip(),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(**channel_stats)
+    # ]))
+    # eval_transformation = transforms.Compose([
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(**channel_stats)
+    # ])
+    demo = True
+    if demo:
+        return {
+            'attack_type': 'pa',
+            'data_root': '',
+            'processed_meta': 'data-local/cyber/asvspoof19/meta/',
+            'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
+            'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
+            'feat_storage': '/home/vano/wrkdir/projects_data/antispoofing_speech/logspec/raw_fbank_ASVspoof2019_PA_train_spec.1.scp',
+            'scoring_path': 'pa_scores/',
+            'num_classes': 2
+        }
+    else:
+        return {
+            'train_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
+            'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_validation.tsv',
+            'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
+            'feat_storage': '/home/vano/wrkdir/projects_data/antispoofing_speech/logspec/raw_fbank_ASVspoof2019_PA_train_spec.1.scp',
+            'scoring_path': 'pa_scores/',
+            'num_classes': 2
+        }

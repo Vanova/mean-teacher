@@ -12,7 +12,7 @@ import logging
 
 import torch
 
-import main
+import main_cifar
 from mean_teacher.cli import parse_dict_args
 from mean_teacher.run_context import RunContext
 
@@ -73,8 +73,8 @@ def run(title, base_batch_size, base_labeled_batch_size, base_lr, data_seed, **k
         'labels': 'data-local/labels/ilsvrc2012/128000_balanced_labels/{:02d}.txt'.format(data_seed),
     }
     context = RunContext(__file__, data_seed)
-    main.args = parse_dict_args(**adapted_args, **kwargs)
-    main.main(context)
+    main_cifar.args = parse_dict_args(**adapted_args, **kwargs)
+    main_cifar.main(context)
 
 
 if __name__ == "__main__":

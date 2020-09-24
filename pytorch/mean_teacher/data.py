@@ -15,11 +15,8 @@ from PIL import Image
 import numpy as np
 from torch.utils.data.sampler import Sampler
 
-
 LOG = logging.getLogger('main')
 NO_LABEL = -1
-
-
 
 
 class RandomTranslateWithReflect:
@@ -79,17 +76,14 @@ class TransformTwice:
         return out1, out2
 
 
-def relabel_dataset(dataset, labels):
+def relabel_dataset(dataset, labels):  # TODO fix use ArkDataGenerator. self.file_keys / self.labels
     unlabeled_idxs = []
-    for idx in range(len(dataset.imgs)):
-        path, _ = dataset.imgs[idx]
-        filename = os.path.basename(path)
-        if filename in labels:
-            label_idx = dataset.class_to_idx[labels[filename]]
-            dataset.imgs[idx] = path, label_idx
-            del labels[filename]
+    for idx in range(len(dataset)):
+        fid = dataset.file_keys[idx]
+        if fid in labels:
+            del labels[fid]
         else:
-            dataset.imgs[idx] = path, NO_LABEL
+            dataset.labels[idx] = NO_LABEL
             unlabeled_idxs.append(idx)
 
     if len(labels) != 0:
@@ -97,7 +91,7 @@ def relabel_dataset(dataset, labels):
         some_missing = ', '.join(list(labels.keys())[:5])
         raise LookupError(message.format(len(labels), some_missing))
 
-    labeled_idxs = sorted(set(range(len(dataset.imgs))) - set(unlabeled_idxs))
+    labeled_idxs = sorted(set(range(len(dataset))) - set(unlabeled_idxs))
 
     return labeled_idxs, unlabeled_idxs
 
@@ -109,6 +103,7 @@ class TwoStreamBatchSampler(Sampler):
     During the epoch, the secondary indices are iterated through
     as many times as needed.
     """
+
     def __init__(self, primary_indices, secondary_indices, batch_size, secondary_batch_size):
         self.primary_indices = primary_indices
         self.secondary_indices = secondary_indices
@@ -124,8 +119,8 @@ class TwoStreamBatchSampler(Sampler):
         return (
             primary_batch + secondary_batch
             for (primary_batch, secondary_batch)
-            in  zip(grouper(primary_iter, self.primary_batch_size),
-                    grouper(secondary_iter, self.secondary_batch_size))
+            in zip(grouper(primary_iter, self.primary_batch_size),
+                   grouper(secondary_iter, self.secondary_batch_size))
         )
 
     def __len__(self):
@@ -140,6 +135,7 @@ def iterate_eternally(indices):
     def infinite_shuffles():
         while True:
             yield np.random.permutation(indices)
+
     return itertools.chain.from_iterable(infinite_shuffles())
 
 
