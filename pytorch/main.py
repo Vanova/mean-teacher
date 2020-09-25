@@ -28,6 +28,12 @@ from mean_teacher.run_context import RunContext
 from mean_teacher.data import NO_LABEL
 from mean_teacher.utils import *
 
+"""
+DEBUG:
+python main.py --dataset cifar10 --labels data-local/labels/cifar10/1000_balanced_labels/00.txt
+ --arch cifar_shakeshake26 --consistency 100.0 --consistency-rampup 5 --labeled-batch-size 5
+ --epochs 3 --lr-rampdown-epochs 210 -b 16 
+"""
 
 LOG = logging.getLogger('main')
 
