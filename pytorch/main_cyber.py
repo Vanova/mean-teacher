@@ -240,7 +240,7 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
     end = time.time()
     # for i, ((input, ema_input), target) in enumerate(train_loader):
     # for i, ((ut1, input, target1), (ut2, ema_input, target2)) in enumerate(train_loader):
-    for i, (fids, input, target) in enumerate(train_loader): # todo fix
+    for i, (fids, input, ema_input, target) in enumerate(train_loader): # todo fix ARKGenerator with 2 features
         # measure data loading time
         meters.update('data_time', time.time() - end)
 
@@ -259,7 +259,7 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
         ema_model_out = ema_model(ema_input_var)
         model_out = model(input_var)
 
-        if isinstance(model_out, Variable):
+        if isinstance(model_out, Variable): # TODO check!!!
             assert args.logit_distance_cost < 0
             logit1 = model_out
             ema_logit = ema_model_out
