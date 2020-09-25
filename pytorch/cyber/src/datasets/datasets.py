@@ -43,7 +43,7 @@ class ArkDataGenerator(thd.Dataset):
         if len(dif):
             print('[WARNING] no features for files: %d / %d' % (len(dif), len(lkeys)))
 
-        self.file_keys = list(set(lkeys) & set(fkeys))[:50]
+        self.file_keys = list(set(lkeys) & set(fkeys)) #[:50]
         print('[INFO] sample from %d files' % len(self.file_keys))
 
     def __len__(self):
@@ -62,7 +62,8 @@ class ArkDataGenerator(thd.Dataset):
 
         utt_ids = [fkey] * slides.shape[0]
         ys = [self.labels[counter]] * slides.shape[0]
-        return utt_ids, slides, ys
+        # return utt_ids, slides, ys
+        return slides, ys
 
     @staticmethod
     def _pad_utterance(feat, wnd_size):

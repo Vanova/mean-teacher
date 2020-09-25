@@ -27,14 +27,17 @@ from mean_teacher import architectures, datasets, data, losses, ramps, cli
 from mean_teacher.run_context import RunContext
 from mean_teacher.data import NO_LABEL
 from mean_teacher.utils import *
-import cyber.src.datasets.cyber as CD
-import cyber.src.datasets.datasets as cybd
+import cyber.src.datasets.cyber as cdc
+import cyber.src.datasets.datasets as cdd
+import cyber.config as cfg
+import cyber.src.model.model as M
+import cyber.src.trainer.scheduler as sch
 
 """
 Debug mode:
 python main_cyber.py --dataset asvspoof2019pa --labels data-local/cyber/asvspoof19/meta/pa/labels1K.tsv
 --arch senet34 --consistency 100.0 --consistency-rampup 5 --labeled-batch-size 3
---epochs 3 --lr-rampdown-epochs 210 -b 16
+--epochs 3 --lr-rampdown-epochs 210 -b 16 --resume data-local/cyber/pretrained/pa/senet34_py3
 """
 
 LOG = logging.getLogger('main')
@@ -63,11 +66,20 @@ def main(context):
             ema='EMA ' if ema else '',
             arch=args.arch))
         # TODO fix: add senet34, load checkpoint if pretrained
-        model_factory = architectures.__dict__[args.arch]
-        model_params = dict(pretrained=args.pretrained, num_classes=num_classes)
-        model = model_factory(**model_params)
-        # model = nn.DataParallel(model).cuda() # TODO fix
+        # model_factory = architectures.__dict__[args.arch]
+        # model_params = dict(pretrained=args.pretrained, num_classes=num_classes)
+        # model = model_factory(**model_params)
+        # device setup
+        use_cuda = torch.cuda.is_available()  # TODO check kaggle DFDC
+        n_cuda = torch.cuda.device_count()
+        cudnn.benchmark = True  # speeds up training, if input is fixed size
+        device = torch.device("cuda" if use_cuda else "cpu")
 
+        model = M.prepare_model(**cfg.model_params).to(device)
+        # wrap model for multi-GPUs, if necessary
+        if use_cuda and n_cuda > 1:
+            print('multi-gpu')
+            model = nn.DataParallel(model).cuda()
         if ema:
             for param in model.parameters():
                 param.detach_()
@@ -76,30 +88,40 @@ def main(context):
 
     model = create_model()
     ema_model = create_model(ema=True)
-
     LOG.info(parameters_string(model))
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay,
-                                nesterov=args.nesterov)
+    # TODO use this or ours?
+    optimizer = sch.ScheduledOptimizer(torch.optim.Adam(
+        model.parameters(), betas=(0.9, 0.98), eps=1e-09,
+        weight_decay=1e-4, amsgrad=True),
+        cfg.n_warmup_steps)
+    # optimizer = torch.optim.SGD(model.parameters(), args.lr,
+    #                             momentum=args.momentum,
+    #                             weight_decay=args.weight_decay,
+    #                             nesterov=args.nesterov)
 
     # optionally resume from a checkpoint
     if args.resume:
-        assert os.path.isfile(args.resume), "=> no checkpoint found at '{}'".format(args.resume)
-        LOG.info("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
-        args.start_epoch = checkpoint['epoch']
-        global_step = checkpoint['global_step']
-        best_prec1 = checkpoint['best_prec1']
-        model.load_state_dict(checkpoint['state_dict'])
-        ema_model.load_state_dict(checkpoint['ema_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        LOG.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
+        if os.path.isfile(args.resume):
+            res_epoch = M.load_checkpoint(model, optimizer, args.resume)
+            print('[INFO] checkpoint was trained %d epoches, we tune with %d more epoches' %
+                  (res_epoch, args.epochs))
+        else:
+            print("===> no checkpoint found at '{}'".format(args.resume))
+        # assert os.path.isfile(args.resume), "=> no checkpoint found at '{}'".format(args.resume)
+        # LOG.info("=> loading checkpoint '{}'".format(args.resume))
+        # checkpoint = torch.load(args.resume)
+        # args.start_epoch = checkpoint['epoch']
+        # global_step = checkpoint['global_step'] TODO fix
+        # best_prec1 = checkpoint['best_prec1']
+        # model.load_state_dict(checkpoint['state_dict'])
+        # ema_model.load_state_dict(checkpoint['ema_state_dict']) TODO fix
+        # optimizer.load_state_dict(checkpoint['optimizer'])
+        # LOG.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
 
     cudnn.benchmark = True
 
-    if args.evaluate:
+    if args.evaluate: # TODO use
         LOG.info("Evaluating the primary model:")
         validate(eval_loader, model, validation_log, global_step, args.start_epoch)
         LOG.info("Evaluating the EMA model:")
@@ -142,15 +164,15 @@ def create_data_loaders(dataconfig, args):
     # dataset = torchvision.datasets.ImageFolder(traindir, train_transformation)
 
     ######
-    meta = CD.ASVSpoof19Meta(data_dir=dataconfig['data_root'],
-                             meta_dir=dataconfig['processed_meta'],
-                             folds_num=1,  # default
-                             attack_type=dataconfig['attack_type'])
+    meta = cdc.ASVSpoof19Meta(data_dir=dataconfig['data_root'],
+                              meta_dir=dataconfig['processed_meta'],
+                              folds_num=1,  # default
+                              attack_type=dataconfig['attack_type'])
 
-    fl_train = meta.fold_list(fold=1, data_split=CD.ASVSpoof19Meta.DataSplit.train)
-    dataset = cybd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
-                                    fold_list=fl_train,
-                                    rand_slides=True)
+    fl_train = meta.fold_list(fold=1, data_split=cdc.ASVSpoof19Meta.DataSplit.train)
+    dataset = cdd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
+                                   fold_list=fl_train,
+                                   rand_slides=True)
     ######
 
     if args.labels:  # TODO list of labels we have
@@ -173,10 +195,10 @@ def create_data_loaders(dataconfig, args):
                                                pin_memory=True)
 
     #####
-    fl_eval = meta.fold_list(fold=1, data_split=CD.ASVSpoof19Meta.DataSplit.validation)
-    eval_data = cybd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
-                                      fold_list=fl_eval,
-                                      rand_slides=True)
+    fl_eval = meta.fold_list(fold=1, data_split=cdc.ASVSpoof19Meta.DataSplit.validation)  # TODO note val == train
+    eval_data = cdd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
+                                     fold_list=fl_eval,
+                                     rand_slides=True)
     #####
 
     eval_loader = torch.utils.data.DataLoader(
@@ -199,7 +221,7 @@ def update_ema_variables(model, ema_model, alpha, global_step):
 
 def train(train_loader, model, ema_model, optimizer, epoch, log):
     global global_step
-
+    # TODO check, we use loss = F.nll_loss(p, y) in ASVSpoof
     class_criterion = nn.CrossEntropyLoss(size_average=False, ignore_index=NO_LABEL).cuda()
     if args.consistency_type == 'mse':
         consistency_criterion = losses.softmax_mse_loss
@@ -216,7 +238,9 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
     ema_model.train()
 
     end = time.time()
-    for i, ((input, ema_input), target) in enumerate(train_loader):
+    # for i, ((input, ema_input), target) in enumerate(train_loader):
+    # for i, ((ut1, input, target1), (ut2, ema_input, target2)) in enumerate(train_loader):
+    for i, (fids, input, target) in enumerate(train_loader): # todo fix
         # measure data loading time
         meters.update('data_time', time.time() - end)
 
