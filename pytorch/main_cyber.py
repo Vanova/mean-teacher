@@ -56,8 +56,8 @@ def main(context):
     validation_log = context.create_train_log("validation")
     ema_validation_log = context.create_train_log("ema_validation")
 
-    dataset_config = datasets.__dict__[args.dataset]()  # TODO add asvspoof2019la asvspoof2019pa
-    num_classes = dataset_config.pop('num_classes')
+    dataset_config = datasets.__dict__[args.dataset]()  # TODO add transformation
+    # num_classes = dataset_config.pop('num_classes')
     train_loader, eval_loader = create_data_loaders(dataset_config, args=args)
 
     def create_model(ema=False):
@@ -121,7 +121,7 @@ def main(context):
 
     cudnn.benchmark = True
 
-    if args.evaluate: # TODO use
+    if args.evaluate:
         LOG.info("Evaluating the primary model:")
         validate(eval_loader, model, validation_log, global_step, args.start_epoch)
         LOG.info("Evaluating the EMA model:")
@@ -161,10 +161,7 @@ def main(context):
 def create_data_loaders(dataconfig, args):
     assert_exactly_one([args.exclude_unlabeled, args.labeled_batch_size])
 
-    # dataset = torchvision.datasets.ImageFolder(traindir, train_transformation)
-
-    ######
-    meta = cdc.ASVSpoof19Meta(data_dir=dataconfig['data_root'],
+    meta = cdc.ASVSpoof19Meta(data_dir=dataconfig['root'],
                               meta_dir=dataconfig['processed_meta'],
                               folds_num=1,  # default
                               attack_type=dataconfig['attack_type'])
@@ -172,10 +169,10 @@ def create_data_loaders(dataconfig, args):
     fl_train = meta.fold_list(fold=1, data_split=cdc.ASVSpoof19Meta.DataSplit.train)
     dataset = cdd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
                                    fold_list=fl_train,
+                                   transform=dataconfig['train_trans'],
                                    rand_slides=True)
-    ######
 
-    if args.labels:  # TODO list of labels we have
+    if args.labels:
         with open(args.labels) as f:
             labels = dict(line.split('\t') for line in f.read().splitlines())
         labeled_idxs, unlabeled_idxs = data.relabel_dataset(dataset, labels)
@@ -198,6 +195,7 @@ def create_data_loaders(dataconfig, args):
     fl_eval = meta.fold_list(fold=1, data_split=cdc.ASVSpoof19Meta.DataSplit.validation)  # TODO note val == train
     eval_data = cdd.ArkDataGenerator(data_file=dataconfig['feat_storage'],
                                      fold_list=fl_eval,
+                                     transform=dataconfig['eval_trans'],
                                      rand_slides=True)
     #####
 
@@ -245,19 +243,26 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
         meters.update('data_time', time.time() - end)
 
         adjust_learning_rate(optimizer, epoch, i, len(train_loader))
-        meters.update('lr', optimizer.param_groups[0]['lr'])
+        meters.update('lr', optimizer.optimizer.param_groups[0]['lr'])
 
-        input_var = input
-        ema_input_var = ema_input
-        target_var = target
+        # ema_input_var = ema_input
+        # target_var = target[0]
+        ######## TODO check dimensions: stack utterances
+        input = torch.reshape(input, (input.size(0) * input.size(1),) + input.shape[2:])
+        ema_input = torch.reshape(ema_input, (ema_input.size(0) * ema_input.size(1),) + ema_input.shape[2:])
+        # input = input.to(device)
+        target = torch.stack(target)
+        target = target.reshape(-1)
+        # target = target.to(device).view((-1,))
+        ########
 
-        minibatch_size = len(target_var)
-        labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+        minibatch_size = len(target)
+        labeled_minibatch_size = target.data.ne(NO_LABEL).sum()
         assert labeled_minibatch_size > 0
         meters.update('labeled_minibatch_size', labeled_minibatch_size)
 
-        ema_model_out = ema_model(ema_input_var)
-        model_out = model(input_var)
+        ema_model_out = ema_model(ema_input)
+        model_out = model(input)
 
         if isinstance(model_out, Variable): # TODO check!!!
             assert args.logit_distance_cost < 0
@@ -280,10 +285,10 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
             class_logit, cons_logit = logit1, logit1
             res_loss = 0
 
-        class_loss = class_criterion(class_logit, target_var) / minibatch_size
+        class_loss = class_criterion(class_logit, target) / minibatch_size
         meters.update('class_loss', class_loss.data)
 
-        ema_class_loss = class_criterion(ema_logit, target_var) / minibatch_size
+        ema_class_loss = class_criterion(ema_logit, target) / minibatch_size
         meters.update('ema_class_loss', ema_class_loss.data)
 
         if args.consistency:
@@ -299,13 +304,13 @@ def train(train_loader, model, ema_model, optimizer, epoch, log):
         assert not (np.isnan(loss.data) or loss.data > 1e5), 'Loss explosion: {}'.format(loss.data)
         meters.update('loss', loss.data)
 
-        prec1, prec5 = accuracy(class_logit.data, target_var.data, topk=(1, 5))
+        prec1, prec5 = accuracy(class_logit.data, target.data, topk=(1, 2))  # TODO top (1, 2)
         meters.update('top1', prec1[0], labeled_minibatch_size)
         meters.update('error1', 100. - prec1[0], labeled_minibatch_size)
         meters.update('top5', prec5[0], labeled_minibatch_size)
         meters.update('error5', 100. - prec5[0], labeled_minibatch_size)
 
-        ema_prec1, ema_prec5 = accuracy(ema_logit.data, target_var.data, topk=(1, 5))
+        ema_prec1, ema_prec5 = accuracy(ema_logit.data, target.data, topk=(1, 2))
         meters.update('ema_top1', ema_prec1[0], labeled_minibatch_size)
         meters.update('ema_error1', 100. - ema_prec1[0], labeled_minibatch_size)
         meters.update('ema_top5', ema_prec5[0], labeled_minibatch_size)
@@ -423,7 +428,7 @@ def adjust_learning_rate(optimizer, epoch, step_in_epoch, total_steps_in_epoch):
         assert args.lr_rampdown_epochs >= args.epochs
         lr *= ramps.cosine_rampdown(epoch, args.lr_rampdown_epochs)
 
-    for param_group in optimizer.param_groups:
+    for param_group in optimizer.optimizer.param_groups:
         param_group['lr'] = lr
 
 

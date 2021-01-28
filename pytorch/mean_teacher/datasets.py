@@ -63,25 +63,25 @@ def cifar10():
 
 @export
 def asvspoof2019la():
-    # channel_stats = dict(mean=[0.4914, 0.4822, 0.4465],
-    #                      std=[0.2470,  0.2435,  0.2616])
-    # train_transformation = data.TransformTwice(transforms.Compose([
-    #     data.RandomTranslateWithReflect(4),
-    #     transforms.RandomHorizontalFlip(),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(**channel_stats)
-    # ]))
-    # eval_transformation = transforms.Compose([
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(**channel_stats)
-    # ])
+    train_trans = data.TransformTwice(transforms.Compose([
+        data.RandomTranslateWithReflect(4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ]))
+    eval_trans = transforms.Compose([
+        transforms.ToTensor(),
+    ])
 
     return {
+        'attack_type': 'la',
+        'root': '/home/vano/wrkdir/datasets/asvspoof2019',
         'train_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_train.tsv',
         'val_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_validation.tsv',
         'eval_meta': 'data-local/cyber/asvspoof19/meta/la/fold1_evaluation.tsv',
         'feat_storage': '',
         'scoring_path': 'la_scores/',
+        'train_trans': train_trans,
+        'eval_trans': eval_trans,
         'num_classes': 2
     }
 
@@ -89,23 +89,44 @@ def asvspoof2019la():
 @export
 def asvspoof2019pa():
     demo = True
+
+    # TODO transform, mixer
+
+    train_trans = data.TransformTwice(transforms.Compose([
+        data.RandomTranslateWithReflect(4),  # TODO add pad, random_crop or consecutive_slides
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ]))
+
+    eval_trans = transforms.Compose([
+        transforms.ToTensor(),
+    ])
     if demo:
         return {
             'attack_type': 'pa',
-            'data_root': '',
+            'root': '/home/vano/wrkdir/datasets/asvspoof2019',
             'processed_meta': 'data-local/cyber/asvspoof19/meta/',
-            'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
-            'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
+            # 'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
+            # 'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
             'feat_storage': '/home/vano/wrkdir/projects_data/asvspoof2019/ASVspoof2019_PA_train/feats.scp',
             'scoring_path': 'pa_scores/',
+            'train_trans': train_trans,
+            'eval_trans': eval_trans,
             'num_classes': 2
         }
     else:
         return {
-            'train_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
-            'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_validation.tsv',
-            'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
+            'attack_type': 'pa',
+            'root': '/home/vano/wrkdir/datasets/asvspoof2019',
+            # 'train_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_train.tsv',
+            # 'val_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_validation.tsv',
+            # 'eval_meta': 'data-local/cyber/asvspoof19/meta/pa/fold1_evaluation.tsv',
             'feat_storage': '/home/vano/wrkdir/projects_data/antispoofing_speech/logspec/raw_fbank_ASVspoof2019_PA_train_spec.1.scp',
             'scoring_path': 'pa_scores/',
             'num_classes': 2
         }
+
+
+@export
+def aasg_daf():
+    pass

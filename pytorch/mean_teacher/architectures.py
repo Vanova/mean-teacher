@@ -38,6 +38,10 @@ def resnext152(pretrained=False, **kwargs):
     return model
 
 
+@export
+def senet34():
+    pass
+
 
 class ResNet224x224(nn.Module):
     def __init__(self, block, layers, channels, groups=1, num_classes=1000, downsample='basic'):
